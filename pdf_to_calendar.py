@@ -70,6 +70,55 @@ class PDFCalendarExtractor:
                 text += page.extract_text() + "\n"
         return text
 
+    def extract_schedule_section(self, text: str) -> str:
+        """정산 및 환수 일정 섹션만 추출"""
+        # 섹션 시작 패턴들
+        section_start_patterns = [
+            r'정산\s*및\s*환수\s*일정',
+            r'정산/환수\s*일정',
+            r'\[정산/환수\s*기준\]',
+            r'정산.*환수.*기준',
+        ]
+
+        # 섹션 시작 위치 찾기
+        start_pos = None
+        for pattern in section_start_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                start_pos = match.start()
+                break
+
+        if start_pos is None:
+            # 섹션을 못 찾았으면 전체 텍스트 반환 (기존 동작 유지)
+            return text
+
+        # 섹션 끝 패턴들 (다음 주요 섹션 또는 페이지 구분)
+        section_end_patterns = [
+            r'\n\s*\[.*?\]\s*\n',  # 다음 대괄호 섹션
+            r'\n\s*\d+\.\s+[가-힣A-Za-z]',  # 다음 번호 매겨진 섹션 (예: 1. 캠페인)
+            r'\n\s*■\s*',  # 다음 항목 마커
+            r'\n\s*※\s*',  # 주의사항
+            r'\[업적환수\]',  # 업적환수 섹션
+        ]
+
+        # 시작 위치 이후에서 끝 위치 찾기
+        end_pos = len(text)
+        search_start = start_pos + 100  # 시작점에서 100자 이후부터 끝 찾기
+
+        for pattern in section_end_patterns:
+            match = re.search(pattern, text[search_start:])
+            if match:
+                candidate_end = search_start + match.start()
+                if candidate_end < end_pos:
+                    end_pos = candidate_end
+
+        # 섹션 텍스트 추출 (최소 200자는 확보)
+        if end_pos - start_pos < 200:
+            end_pos = min(start_pos + 1000, len(text))
+
+        section_text = text[start_pos:end_pos]
+        return section_text
+
     def find_dates_with_context(self, text: str) -> List[Tuple[datetime, str, int]]:
         """텍스트에서 날짜와 주변 컨텍스트 찾기
 
@@ -168,7 +217,13 @@ class PDFCalendarExtractor:
         """PDF에서 모든 이벤트 추출"""
         print(f"📄 PDF 파일 분석 중: {self.pdf_path.name}")
 
-        text = self.extract_text()
+        # 전체 텍스트 추출
+        full_text = self.extract_text()
+
+        # 정산 및 환수 일정 섹션만 추출
+        text = self.extract_schedule_section(full_text)
+        print(f"📑 정산/환수 일정 섹션 추출 완료 ({len(text)}자)")
+
         dates_with_context = self.find_dates_with_context(text)
 
         print(f"✅ {len(dates_with_context)}개의 날짜를 발견했습니다.")
