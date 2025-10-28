@@ -123,6 +123,73 @@ def determine_alerts(category: str) -> List[int]:
         return [1]  # 1일 전
 
 
+def merge_events_by_date(events: List[CalendarEvent]) -> List[CalendarEvent]:
+    """같은 날짜의 이벤트들을 하나로 병합"""
+    from collections import defaultdict
+
+    # 날짜별로 이벤트 그룹화
+    events_by_date = defaultdict(list)
+    for event in events:
+        events_by_date[event.date].append(event)
+
+    # 카테고리 우선순위 (높을수록 우선)
+    category_priority = {
+        "환수": 5,
+        "지급": 4,
+        "정산": 3,
+        "행사": 2,
+        "마감": 1,
+        "일정": 0
+    }
+
+    merged_events = []
+    for date, date_events in sorted(events_by_date.items()):
+        if len(date_events) == 1:
+            # 하나만 있으면 그대로 사용
+            merged_events.append(date_events[0])
+        else:
+            # 여러 개 있으면 병합
+            # 제목에서 캠페인 이름 추출 (첫 번째 대괄호 부분)
+            base_title = date_events[0].summary.split(']')[0] + ']' if ']' in date_events[0].summary else "[MetLife 캠페인]"
+
+            # 모든 고유한 이모지와 키워드 추출
+            unique_parts = set()
+            for event in date_events:
+                # 대괄호 이후 부분을 쉼표로 분리
+                if ']' in event.summary:
+                    parts = event.summary.split(']', 1)[1].strip().split(',')
+                    for part in parts:
+                        unique_parts.add(part.strip())
+
+            # 정렬하여 일관된 순서로 표시
+            sorted_parts = sorted(unique_parts, key=lambda x: (
+                # "1차", "2차" 등이 있으면 맨 앞으로
+                not any(c in x for c in ['1차', '2차', '3차']),
+                x
+            ))
+
+            merged_summary = f"{base_title} {', '.join(sorted_parts)}"
+
+            # 가장 긴 설명 선택
+            merged_description = max(date_events, key=lambda e: len(e.description)).description
+
+            # 가장 우선순위 높은 카테고리 선택
+            merged_category = max(date_events, key=lambda e: category_priority.get(e.category, 0)).category
+
+            # 가장 긴 알림 목록 선택
+            merged_alerts = max(date_events, key=lambda e: len(e.alerts)).alerts
+
+            merged_events.append(CalendarEvent(
+                date=date,
+                summary=merged_summary,
+                description=merged_description,
+                category=merged_category,
+                alerts=merged_alerts
+            ))
+
+    return merged_events
+
+
 def process_pdf_bytes(pdf_bytes: bytes, filename: str) -> PDFProcessResponse:
     """PDF 바이트를 처리하여 이벤트 추출"""
     try:
@@ -149,6 +216,9 @@ def process_pdf_bytes(pdf_bytes: bytes, filename: str) -> PDFProcessResponse:
                 category=category,
                 alerts=alerts
             ))
+
+        # 같은 날짜의 이벤트 병합
+        events = merge_events_by_date(events)
 
         # 임시 파일 삭제
         Path(tmp_path).unlink()
