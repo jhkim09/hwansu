@@ -119,6 +119,8 @@ def determine_alerts(category: str) -> List[int]:
         return [3, 1]  # 3일 전, 1일 전
     elif category == "행사":
         return [7, 1]  # 7일 전, 1일 전
+    elif category == "산출":
+        return [7, 3, 1]  # 7일 전, 3일 전, 1일 전
     else:
         return [1]  # 1일 전
 
@@ -218,7 +220,13 @@ def process_pdf_bytes(pdf_bytes: bytes, filename: str) -> PDFProcessResponse:
         events = []
         for event in raw_events:
             summary = event['summary']
-            category = determine_event_category(summary)
+
+            # PDF에서 추출된 타입 정보 사용 (있으면)
+            if 'type' in event:
+                category = event['type']
+            else:
+                category = determine_event_category(summary)
+
             alerts = determine_alerts(category)
 
             events.append(CalendarEvent(
@@ -229,8 +237,8 @@ def process_pdf_bytes(pdf_bytes: bytes, filename: str) -> PDFProcessResponse:
                 alerts=alerts
             ))
 
-        # 같은 날짜의 이벤트 병합
-        events = merge_events_by_date(events)
+        # 병합하지 않음 - 각 타입(산출/지급/환수)을 명확하게 구분
+        # events = merge_events_by_date(events)
 
         # 임시 파일 삭제
         Path(tmp_path).unlink()

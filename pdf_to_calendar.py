@@ -70,6 +70,138 @@ class PDFCalendarExtractor:
                 text += page.extract_text() + "\n"
         return text
 
+    def extract_schedule_table(self) -> List[Dict]:
+        """정산/환수 테이블을 직접 파싱하여 이벤트 추출"""
+        events = []
+
+        with pdfplumber.open(self.pdf_path) as pdf:
+            for page in pdf.pages:
+                # 테이블 추출
+                tables = page.extract_tables()
+
+                for table in tables:
+                    if not table or len(table) < 2:
+                        continue
+
+                    # 헤더 행에서 컬럼 찾기
+                    header = [str(cell).strip() if cell else "" for cell in table[0]]
+
+                    # 정산/환수 테이블인지 확인
+                    header_text = " ".join(header).lower()
+                    if not ("캠페인" in header_text or "산출" in header_text or "환수" in header_text):
+                        continue
+
+                    # 컬럼 인덱스 찾기
+                    campaign_idx = None
+                    calculation_idx = None
+                    payment_idx = None
+                    recovery_idx = None
+
+                    for idx, h in enumerate(header):
+                        h_lower = h.lower()
+                        if "캠페인" in h_lower:
+                            campaign_idx = idx
+                        elif "산출" in h_lower:
+                            calculation_idx = idx
+                        elif "지급" in h_lower or "행사" in h_lower:
+                            payment_idx = idx
+                        elif "환수" in h_lower:
+                            recovery_idx = idx
+
+                    # 데이터 행 파싱
+                    for row in table[1:]:
+                        if not row or len(row) == 0:
+                            continue
+
+                        # 캠페인명 추출
+                        campaign_name = None
+                        if campaign_idx is not None and campaign_idx < len(row):
+                            campaign_name = str(row[campaign_idx]).strip() if row[campaign_idx] else None
+
+                        if not campaign_name or campaign_name == "":
+                            continue
+
+                        # 1. 산출 날짜
+                        if calculation_idx is not None and calculation_idx < len(row):
+                            calc_cell = str(row[calculation_idx]).strip() if row[calculation_idx] else ""
+                            dates = self.parse_dates_from_text(calc_cell)
+                            for date_obj in dates:
+                                events.append({
+                                    'date': date_obj,
+                                    'summary': f"[{campaign_name}] 📊 산출",
+                                    'description': f"{campaign_name} 캠페인 최종 산출",
+                                    'type': '산출'
+                                })
+
+                        # 2. 지급/행사 날짜
+                        if payment_idx is not None and payment_idx < len(row):
+                            pay_cell = str(row[payment_idx]).strip() if row[payment_idx] else ""
+                            dates = self.parse_dates_from_text(pay_cell)
+
+                            # 지급인지 행사인지 판단
+                            if "행사" in pay_cell or "초대" in pay_cell:
+                                emoji = "🎉"
+                                type_name = "행사"
+                            else:
+                                emoji = "💰"
+                                type_name = "지급"
+
+                            for date_obj in dates:
+                                events.append({
+                                    'date': date_obj,
+                                    'summary': f"[{campaign_name}] {emoji} {type_name}",
+                                    'description': f"{campaign_name} 캠페인 {type_name}",
+                                    'type': type_name
+                                })
+
+                        # 3. 환수 날짜
+                        if recovery_idx is not None and recovery_idx < len(row):
+                            recovery_cell = str(row[recovery_idx]).strip() if row[recovery_idx] else ""
+
+                            # "1차", "2차" 구분
+                            rounds = re.findall(r'(\d+)차[:\s]*([0-9.년월\s]+)', recovery_cell)
+                            if rounds:
+                                for round_num, date_text in rounds:
+                                    dates = self.parse_dates_from_text(date_text)
+                                    for date_obj in dates:
+                                        events.append({
+                                            'date': date_obj,
+                                            'summary': f"[{campaign_name}] ⚠️ {round_num}차 환수",
+                                            'description': f"{campaign_name} 캠페인 {round_num}차 환수",
+                                            'type': '환수'
+                                        })
+                            else:
+                                # 차수 없는 일반 환수
+                                dates = self.parse_dates_from_text(recovery_cell)
+                                for date_obj in dates:
+                                    events.append({
+                                        'date': date_obj,
+                                        'summary': f"[{campaign_name}] ⚠️ 환수",
+                                        'description': f"{campaign_name} 캠페인 환수",
+                                        'type': '환수'
+                                    })
+
+        return events
+
+    def parse_dates_from_text(self, text: str) -> List[datetime]:
+        """텍스트에서 날짜 파싱"""
+        dates = []
+
+        for pattern in self.DATE_PATTERNS:
+            for match in re.finditer(pattern, text):
+                groups = match.groups()
+                year = int(groups[0])
+                month = int(groups[1])
+                day = int(groups[2]) if len(groups) > 2 else 1
+
+                try:
+                    date_obj = datetime(year, month, day)
+                    dates.append(date_obj)
+                except ValueError:
+                    continue
+
+        return dates
+
     def extract_schedule_section(self, text: str) -> str:
         """정산 및 환수 일정 섹션만 추출"""
         # 섹션 시작 패턴들
@@ -216,6 +348,23 @@ class PDFCalendarExtractor:
     def extract_events(self) -> List[Dict]:
         """PDF에서 모든 이벤트 추출"""
         print(f"📄 PDF 파일 분석 중: {self.pdf_path.name}")
+
+        # 방법 1: 테이블 구조 파싱 (우선)
+        print(f"📊 정산/환수 테이블 파싱 시도...")
+        table_events = self.extract_schedule_table()
+
+        if table_events:
+            print(f"✅ 테이블에서 {len(table_events)}개의 이벤트를 추출했습니다.")
+
+            # 이벤트 출력
+            for event in table_events:
+                date_str = event['date'].strftime('%Y.%m.%d')
+                print(f"  📅 {date_str}: {event['summary']}")
+
+            return table_events
+
+        # 방법 2: 텍스트 기반 파싱 (폴백)
+        print(f"⚠️  테이블을 찾을 수 없어 텍스트 기반 파싱으로 전환...")
 
         # 전체 텍스트 추출
         full_text = self.extract_text()
