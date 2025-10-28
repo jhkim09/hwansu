@@ -1,0 +1,385 @@
+{
+  "name": "PDF to Google Calendar 자동화",
+  "flow": [
+    {
+      "id": 1,
+      "module": "google-drive:watchFiles",
+      "version": 3,
+      "parameters": {
+        "__IMTCONN__": "<YOUR_GOOGLE_DRIVE_CONNECTION>"
+      },
+      "mapper": {
+        "drive": "<YOUR_DRIVE_ID>",
+        "folderId": "<YOUR_FOLDER_ID>",
+        "extensions": "pdf",
+        "limit": "1"
+      },
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        },
+        "restore": {},
+        "expect": [
+          {
+            "name": "drive",
+            "type": "select",
+            "label": "Drive",
+            "required": true
+          },
+          {
+            "name": "folderId",
+            "type": "folder",
+            "label": "Folder",
+            "required": true
+          },
+          {
+            "name": "extensions",
+            "type": "text",
+            "label": "File extensions"
+          },
+          {
+            "name": "limit",
+            "type": "number",
+            "label": "Maximum number of returned files"
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "google-drive:downloadFile",
+      "version": 3,
+      "parameters": {
+        "__IMTCONN__": "<YOUR_GOOGLE_DRIVE_CONNECTION>"
+      },
+      "mapper": {
+        "fileId": "{{1.id}}"
+      },
+      "metadata": {
+        "designer": {
+          "x": 300,
+          "y": 0
+        },
+        "restore": {},
+        "expect": [
+          {
+            "name": "fileId",
+            "type": "text",
+            "label": "File ID",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {},
+      "mapper": {
+        "url": "https://YOUR-API-SERVER.com/webhook/pdf-base64",
+        "serializeUrl": false,
+        "method": "post",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "qs": [],
+        "bodyType": "raw",
+        "parseResponse": true,
+        "authUser": "",
+        "authPass": "",
+        "timeout": "",
+        "shareCookies": false,
+        "ca": "",
+        "rejectUnauthorized": true,
+        "followRedirect": true,
+        "useQuerystring": false,
+        "gzip": true,
+        "useMtls": false,
+        "contentType": "application/json",
+        "body": "{\n  \"data\": \"{{base64(2.data)}}\",\n  \"filename\": \"{{1.name}}\"\n}"
+      },
+      "metadata": {
+        "designer": {
+          "x": 600,
+          "y": 0
+        },
+        "restore": {
+          "expect": {
+            "method": {
+              "mode": "chose",
+              "label": "POST"
+            },
+            "headers": {
+              "mode": "chose",
+              "items": [
+                null
+              ]
+            },
+            "qs": {
+              "mode": "chose"
+            },
+            "bodyType": {
+              "label": "Raw"
+            },
+            "contentType": {
+              "label": "JSON (application/json)"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "__IMTCONN__",
+            "type": "account:http",
+            "label": "Connection",
+            "required": false
+          }
+        ],
+        "expect": [
+          {
+            "name": "url",
+            "type": "url",
+            "label": "URL",
+            "required": true
+          },
+          {
+            "name": "serializeUrl",
+            "type": "boolean",
+            "label": "Serialize URL",
+            "required": true
+          },
+          {
+            "name": "method",
+            "type": "select",
+            "label": "Method",
+            "required": true,
+            "validate": {
+              "enum": [
+                "get",
+                "post",
+                "put",
+                "patch",
+                "delete",
+                "options"
+              ]
+            }
+          },
+          {
+            "name": "headers",
+            "type": "array",
+            "label": "Headers",
+            "spec": [
+              {
+                "name": "name",
+                "type": "text",
+                "label": "Name",
+                "required": true
+              },
+              {
+                "name": "value",
+                "type": "text",
+                "label": "Value"
+              }
+            ]
+          },
+          {
+            "name": "qs",
+            "type": "array",
+            "label": "Query String",
+            "spec": [
+              {
+                "name": "name",
+                "type": "text",
+                "label": "Name",
+                "required": true
+              },
+              {
+                "name": "value",
+                "type": "text",
+                "label": "Value"
+              }
+            ]
+          },
+          {
+            "name": "bodyType",
+            "type": "select",
+            "label": "Body type",
+            "validate": {
+              "enum": [
+                "raw",
+                "x_www_form_urlencoded",
+                "multipart_form_data"
+              ]
+            }
+          },
+          {
+            "name": "parseResponse",
+            "type": "boolean",
+            "label": "Parse response",
+            "required": true
+          },
+          {
+            "name": "contentType",
+            "type": "select",
+            "label": "Content type"
+          },
+          {
+            "name": "body",
+            "type": "text",
+            "label": "Request content"
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "module": "builtin:BasicFeeder",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "array": "{{3.events}}"
+      },
+      "metadata": {
+        "designer": {
+          "x": 900,
+          "y": 0
+        },
+        "restore": {
+          "expect": {
+            "array": {
+              "mode": "edit"
+            }
+          }
+        },
+        "expect": [
+          {
+            "name": "array",
+            "type": "array",
+            "label": "Array",
+            "required": true,
+            "spec": []
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "module": "google-calendar:createAnEvent",
+      "version": 3,
+      "parameters": {
+        "__IMTCONN__": "<YOUR_GOOGLE_CALENDAR_CONNECTION>"
+      },
+      "mapper": {
+        "calendarId": "primary",
+        "eventName": "{{4.summary}}",
+        "allday": true,
+        "from": "{{4.date}}",
+        "to": "{{4.date}}",
+        "description": "{{4.description}}\n\n카테고리: {{4.category}}",
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": "{{first(4.alerts) * 24 * 60}}"
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "designer": {
+          "x": 1200,
+          "y": 0
+        },
+        "restore": {},
+        "expect": [
+          {
+            "name": "calendarId",
+            "type": "select",
+            "label": "Calendar ID",
+            "required": true
+          },
+          {
+            "name": "eventName",
+            "type": "text",
+            "label": "Event name",
+            "required": true
+          },
+          {
+            "name": "allday",
+            "type": "boolean",
+            "label": "All day event"
+          },
+          {
+            "name": "from",
+            "type": "date",
+            "label": "Start date",
+            "required": true
+          },
+          {
+            "name": "to",
+            "type": "date",
+            "label": "End date",
+            "required": true
+          },
+          {
+            "name": "description",
+            "type": "text",
+            "label": "Description"
+          },
+          {
+            "name": "reminders",
+            "type": "object",
+            "label": "Reminders",
+            "spec": [
+              {
+                "name": "useDefault",
+                "type": "boolean",
+                "label": "Use default reminders"
+              },
+              {
+                "name": "overrides",
+                "type": "array",
+                "label": "Reminder overrides",
+                "spec": [
+                  {
+                    "name": "method",
+                    "type": "select",
+                    "label": "Method"
+                  },
+                  {
+                    "name": "minutes",
+                    "type": "number",
+                    "label": "Minutes before"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": {
+      "orphans": []
+    },
+    "zone": "us1.make.com"
+  }
+}
