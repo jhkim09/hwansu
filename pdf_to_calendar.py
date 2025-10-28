@@ -104,20 +104,46 @@ class PDFCalendarExtractor:
 
     def extract_event_name(self, context: str, date_str: str) -> str:
         """컨텍스트에서 이벤트 이름 추출"""
-        # 캠페인명 추출 시도
-        campaign_patterns = [
-            r'([가-힣A-Za-z0-9\s]+)\s*캠페인',
-            r'([가-힣A-Za-z0-9\s]+)\s*Campaign',
-            r'([가-힣A-Za-z0-9\s]+)\s*\|',
+        # 잘 알려진 캠페인명 패턴 (우선순위 순)
+        known_campaigns = [
+            r'All\s+Round\s+Rival\s+(?:Agent|Match)',
+            r'New\s+Frontier\s+\d+',
+            r'Champions?\s+League',
+            r'MPC\s+Reaction\s+Point',
+            r'With\s+U\s+Dollar',
+            r'도전!\s*달러벨',
+            r'BQR\s*\([^)]+\)',
         ]
 
-        for pattern in campaign_patterns:
-            match = re.search(pattern, context)
+        campaign_name = None
+
+        # 1. 잘 알려진 캠페인명 먼저 찾기
+        for pattern in known_campaigns:
+            match = re.search(pattern, context, re.IGNORECASE)
             if match:
-                campaign_name = match.group(1).strip()
-                if len(campaign_name) > 3:  # 너무 짧은 것 제외
-                    break
-        else:
+                campaign_name = match.group(0).strip()
+                break
+
+        # 2. 일반적인 캠페인명 패턴
+        if not campaign_name:
+            campaign_patterns = [
+                r'([가-힣A-Za-z0-9\s]+)\s*캠페인',
+                r'([가-힣A-Za-z0-9\s]+)\s*Campaign',
+                # 대문자로 시작하는 연속된 영단어 (최소 2단어)
+                r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+(?:\s+\d+)?)\b',
+            ]
+
+            for pattern in campaign_patterns:
+                match = re.search(pattern, context)
+                if match:
+                    candidate = match.group(1).strip()
+                    # 너무 짧거나 일반적인 단어는 제외
+                    if len(candidate) > 3 and candidate not in ['Business Quality Review']:
+                        campaign_name = candidate
+                        break
+
+        # 3. 캠페인명을 못 찾았으면 기본값
+        if not campaign_name:
             campaign_name = "MetLife 캠페인"
 
         # 이벤트 타입 추출 (지급, 환수 등)

@@ -149,8 +149,20 @@ def merge_events_by_date(events: List[CalendarEvent]) -> List[CalendarEvent]:
             merged_events.append(date_events[0])
         else:
             # 여러 개 있으면 병합
-            # 제목에서 캠페인 이름 추출 (첫 번째 대괄호 부분)
-            base_title = date_events[0].summary.split(']')[0] + ']' if ']' in date_events[0].summary else "[MetLife 캠페인]"
+            # 모든 고유한 캠페인명 추출
+            campaign_names = set()
+            for event in date_events:
+                if ']' in event.summary:
+                    campaign = event.summary.split(']')[0] + ']'
+                    campaign_names.add(campaign)
+
+            # 캠페인명이 여러 개면 모두 표시, 하나면 그것 사용
+            if len(campaign_names) > 1:
+                base_title = " & ".join(sorted(campaign_names))
+            elif campaign_names:
+                base_title = list(campaign_names)[0]
+            else:
+                base_title = "[MetLife 캠페인]"
 
             # 모든 고유한 이모지와 키워드 추출
             unique_parts = set()
